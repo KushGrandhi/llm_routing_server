@@ -39,10 +39,15 @@ models:
     provider: "groq"
     model_id: "groq/mixtral-8x7b-32768"
 
-  # HuggingFace Models
-  - name: "mistral-hf"
-    provider: "huggingface"
-    model_id: "huggingface/mistralai/Mistral-7B-Instruct-v0.2"
+  - name: "local-llama"
+    provider: "custom_openai"
+    model_id: "llama3.2"
+    api_base: "http://localhost:11434/v1"
+
+  # HuggingFace Models (Limited free tier - most models require paid plan)
+  # - name: "mistral-hf"
+  #   provider: "huggingface"
+  #   model_id: "huggingface/mistralai/Mistral-7B-Instruct-v0.2"
 
   # Custom Self-Hosted Models (OpenAI-compatible endpoints)
   # Uncomment and configure when you have a self-hosted model
