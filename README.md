@@ -12,7 +12,7 @@ Get instant access without any setup:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.llmgateway.io/v1",  # Our hosted endpoint
+    base_url="https://llm.kgai.pro/v1",  # Our hosted endpoint
     api_key="your-api-key"                     # Get yours at llmgateway.io
 )
 
@@ -31,7 +31,7 @@ print(response.choices[0].message.content)
 - ✅ Built-in caching saves you money
 - ✅ Automatic fallbacks for reliability
 
-[**Get Your API Key →**](https://llmgateway.io)
+[**Get Your API Key →**](https://kgai.pro)
 
 ---
 
@@ -259,9 +259,9 @@ curl -X POST http://localhost:5000/v1/models/reload
 
 ## 🆘 Support
 
-- **Documentation:** [docs.llmgateway.io](https://docs.llmgateway.io)
-- **Issues:** [GitHub Issues](https://github.com/yourusername/llm-gateway/issues)
-- **Email:** support@llmgateway.io
+- **Website:** [kgai.pro](https://kgai.pro)
+- **Issues:** [GitHub Issues](https://github.com/kushgrandhi/llm_routing_server/issues)
+- **Email:** khush.grandhi@gmail.com
 
 ---
 
