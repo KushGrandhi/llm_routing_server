@@ -281,15 +281,41 @@ class LLMRouterService:
     ) -> Generator[dict, None, None]:
         """Generate streaming response chunks."""
         for chunk in stream_response:
+            delta_data = {}
+            
+            if chunk.choices[0].delta:
+                delta = chunk.choices[0].delta
+                
+                # Content
+                if hasattr(delta, "content") and delta.content:
+                    delta_data["content"] = delta.content
+                
+                # Role (usually only in first chunk)
+                if hasattr(delta, "role") and delta.role:
+                    delta_data["role"] = delta.role
+                
+                # Tool calls (function calling in streaming)
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    delta_data["tool_calls"] = [
+                        {
+                            "index": tc.index if hasattr(tc, "index") else 0,
+                            "id": tc.id if hasattr(tc, "id") else None,
+                            "type": tc.type if hasattr(tc, "type") else "function",
+                            "function": {
+                                "name": tc.function.name if hasattr(tc.function, "name") else None,
+                                "arguments": tc.function.arguments if hasattr(tc.function, "arguments") else ""
+                            }
+                        }
+                        for tc in delta.tool_calls
+                    ]
+            
             yield {
                 "id": chunk.id if hasattr(chunk, "id") else "chatcmpl-stream",
                 "object": "chat.completion.chunk",
                 "model": model_name,
                 "choices": [{
                     "index": 0,
-                    "delta": {
-                        "content": chunk.choices[0].delta.content or ""
-                    } if chunk.choices[0].delta else {},
+                    "delta": delta_data,
                     "finish_reason": chunk.choices[0].finish_reason
                 }]
             }
@@ -315,16 +341,38 @@ class LLMRouterService:
         if cost_usd is not None:
             usage_data["cost_usd"] = cost_usd
         
+        # Build message object with all possible fields
+        response_message = response.choices[0].message
+        message_data = {
+            "role": "assistant",
+            "content": response_message.content
+        }
+        
+        # Include tool_calls if present (function calling)
+        if hasattr(response_message, "tool_calls") and response_message.tool_calls:
+            message_data["tool_calls"] = [
+                {
+                    "id": tool_call.id,
+                    "type": tool_call.type,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments
+                    }
+                }
+                for tool_call in response_message.tool_calls
+            ]
+        
+        # Include refusal if present (safety)
+        if hasattr(response_message, "refusal") and response_message.refusal:
+            message_data["refusal"] = response_message.refusal
+        
         return {
             "id": response.id,
             "object": "chat.completion",
             "model": model_name,
             "choices": [{
                 "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": response.choices[0].message.content
-                },
+                "message": message_data,
                 "finish_reason": response.choices[0].finish_reason
             }],
             "usage": usage_data,

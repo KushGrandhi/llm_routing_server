@@ -11,6 +11,29 @@ from app.services.metrics_service import metrics_service
 
 chat_blueprint = Blueprint("chat", __name__)
 
+# Parameters we handle explicitly (not passed through as additional_params)
+HANDLED_PARAMETERS = {
+    "model", "messages", "temperature", "max_tokens", "stream"
+}
+
+# OpenAI-compatible parameters to pass through
+PASSTHROUGH_PARAMETERS = {
+    "response_format",      # JSON mode, structured outputs
+    "tools",                # Function calling
+    "tool_choice",          # Function calling control
+    "top_p",                # Nucleus sampling
+    "presence_penalty",     # Repetition control
+    "frequency_penalty",    # Repetition control
+    "stop",                 # Stop sequences
+    "logprobs",             # Log probabilities
+    "top_logprobs",         # Top log probabilities
+    "n",                    # Number of completions
+    "seed",                 # Reproducibility
+    "user",                 # End-user tracking
+    "logit_bias",           # Token biasing
+    "parallel_tool_calls",  # Parallel function calls
+}
+
 
 def _get_api_key_hash() -> str:
     """Get hash of API key for logging."""
@@ -18,6 +41,17 @@ def _get_api_key_hash() -> str:
     if auth_header.startswith("Bearer "):
         return str(hash(auth_header[7:]))
     return "anonymous"
+
+
+def _extract_additional_parameters(request_payload: dict) -> dict:
+    """Extract additional OpenAI-compatible parameters from request."""
+    additional_params = {}
+    
+    for param_name in PASSTHROUGH_PARAMETERS:
+        if param_name in request_payload:
+            additional_params[param_name] = request_payload[param_name]
+    
+    return additional_params
 
 
 @chat_blueprint.route("/chat/completions", methods=["POST"])
@@ -34,6 +68,16 @@ def create_chat_completion():
         temperature: float - Sampling temperature (default: 0.7)
         max_tokens: int - Maximum tokens to generate (optional)
         stream: bool - Whether to stream the response (default: false)
+        
+        Additional supported parameters:
+        response_format: dict - Output format (e.g., {"type": "json_object"})
+        tools: list - Function definitions for function calling
+        tool_choice: str/dict - Control function calling behavior
+        top_p: float - Nucleus sampling parameter
+        presence_penalty: float - Presence penalty (-2.0 to 2.0)
+        frequency_penalty: float - Frequency penalty (-2.0 to 2.0)
+        stop: str/list - Stop sequences
+        seed: int - Random seed for reproducibility
     """
     request_start_time = time.time()
     model_name = None
@@ -60,10 +104,14 @@ def create_chat_completion():
                 }
             }), 400
         
+        # Core parameters
         model_name = request_payload.get("model")
         temperature_value = request_payload.get("temperature", 0.7)
         max_tokens_value = request_payload.get("max_tokens")
         stream_enabled = request_payload.get("stream", False)
+        
+        # Extract additional parameters (response_format, tools, etc.)
+        additional_params = _extract_additional_parameters(request_payload)
         
         # Get services from app context
         llm_router_service = current_app.llm_router
@@ -82,7 +130,8 @@ def create_chat_completion():
                     model_name,
                     temperature_value,
                     max_tokens_value,
-                    request_start_time
+                    request_start_time,
+                    additional_params
                 )
             
             # Non-streaming response
@@ -91,7 +140,8 @@ def create_chat_completion():
                 model=model_name,
                 temperature=temperature_value,
                 max_tokens=max_tokens_value,
-                stream=False
+                stream=False,
+                **additional_params
             )
             
             # Log the request
@@ -216,11 +266,13 @@ def _handle_streaming_response(
     model_name: str,
     temperature_value: float,
     max_tokens_value: int,
-    request_start_time: float
+    request_start_time: float,
+    additional_params=None
 ) -> Response:
     """Handle streaming response using Server-Sent Events."""
     
     effective_model = model_name or llm_router_service.default_model_name
+    additional_params = additional_params or {}
     
     def generate_sse_stream():
         """Generator for SSE streaming."""
@@ -232,7 +284,8 @@ def _handle_streaming_response(
                 model=model_name,
                 temperature=temperature_value,
                 max_tokens=max_tokens_value,
-                stream=True
+                stream=True,
+                **additional_params
             )
             
             for chunk_data in stream_generator:

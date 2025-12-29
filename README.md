@@ -261,7 +261,6 @@ curl -X POST http://localhost:5000/v1/models/reload
 
 - **Website:** [kgai.pro](https://kgai.pro)
 - **Issues:** [GitHub Issues](https://github.com/kushgrandhi/llm_routing_server/issues)
-- **Email:** khush.grandhi@gmail.com
 
 ---
 
