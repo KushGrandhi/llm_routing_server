@@ -3,59 +3,126 @@
 # Use POST /v1/models/reload to hot-reload this config
 
 models:
-  # OpenAI Models
+  # =============================================================================
+  # RELIABLE MODELS - With fallback chains for production use
+  # =============================================================================
+  
+  - name: "reliable-gpt"
+    provider: "openai"
+    model_id: "gpt-4o"
+    fallbacks:
+      - "claude-sonnet"
+      - "gemini-pro"
+    timeout_seconds: 60
+    max_retries: 2
+    cache_enabled: true
+    cache_ttl_seconds: 3600
+    description: "GPT-4o with Claude and Gemini fallbacks"
+
+  - name: "reliable-fast"
+    provider: "gemini"
+    model_id: "gemini/gemini-2.0-flash"
+    fallbacks:
+      - "gpt-4o-mini"
+      - "llama-groq"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
+    cache_ttl_seconds: 1800
+    description: "Fast model with multiple fallbacks"
+
+  # =============================================================================
+  # OPENAI MODELS
+  # =============================================================================
+  
   - name: "gpt-4o"
     provider: "openai"
     model_id: "gpt-4o"
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: true
     
   - name: "gpt-4o-mini"
     provider: "openai"
     model_id: "gpt-4o-mini"
+    timeout_seconds: 60
+    max_retries: 1
+    cache_enabled: true
 
-  # Anthropic Claude Models
+  # =============================================================================
+  # ANTHROPIC CLAUDE MODELS
+  # =============================================================================
+  
   - name: "claude-sonnet"
     provider: "anthropic"
     model_id: "claude-sonnet-4-20250514"
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: true
     
   - name: "claude-haiku"
     provider: "anthropic"
     model_id: "claude-3-5-haiku-20241022"
+    timeout_seconds: 60
+    max_retries: 1
+    cache_enabled: true
 
-  # Google Gemini Models (Free tier available)
+  # =============================================================================
+  # GOOGLE GEMINI MODELS (Free tier available)
+  # =============================================================================
+  
   - name: "gemini-flash"
     provider: "gemini"
     model_id: "gemini/gemini-2.0-flash"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
     
   - name: "gemini-pro"
     provider: "gemini"
     model_id: "gemini/gemini-1.5-pro"
+    timeout_seconds: 60
+    max_retries: 1
+    cache_enabled: true
 
-  # Groq Models (Fast inference, free tier)
+  # =============================================================================
+  # GROQ MODELS (Fast inference, free tier)
+  # =============================================================================
+  
   - name: "llama-groq"
     provider: "groq"
     model_id: "groq/llama-3.3-70b-versatile"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
     
   - name: "mixtral-groq"
     provider: "groq"
     model_id: "groq/mixtral-8x7b-32768"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
 
+  # =============================================================================
+  # CUSTOM / SELF-HOSTED MODELS (OpenAI-compatible endpoints)
+  # =============================================================================
+  
   - name: "local-llama"
     provider: "custom_openai"
     model_id: "llama3.2"
     api_base: "http://localhost:11434/v1"
+    timeout_seconds: 120
+    max_retries: 0
+    cache_enabled: false
 
-  # HuggingFace Models (Limited free tier - most models require paid plan)
-  # - name: "mistral-hf"
-  #   provider: "huggingface"
-  #   model_id: "huggingface/mistralai/Mistral-7B-Instruct-v0.2"
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
 
-  # Custom Self-Hosted Models (OpenAI-compatible endpoints)
-  # Uncomment and configure when you have a self-hosted model
-  # - name: "local-llama"
-  #   provider: "custom_openai"
-  #   model_id: "llama-2-7b"
-  #   api_base: "http://localhost:8080/v1"
-
-# Default model to use when none specified
+# Default model when none specified in request
 default_model: "gemini-flash"
 
+# Global fallback chain (used if model-specific fallbacks fail)
+global_fallbacks:
+  - "gemini-flash"
+  - "llama-groq"

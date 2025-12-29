@@ -1,0 +1,58 @@
+# LLM Gateway - Docker Compose Configuration
+# Run: docker-compose up -d
+
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      # Gateway Configuration
+      - GATEWAY_API_KEYS=${GATEWAY_API_KEYS:-}
+      - CACHE_ENABLED=true
+      - CACHE_TYPE=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_STORAGE_URI=redis://redis:6379
+      
+      # LLM Provider Keys (set in .env file)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    volumes:
+      - ./config:/app/config:ro
+      - gateway_data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: llm-gateway-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  gateway_data:
+  redis_data:
+

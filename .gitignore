@@ -21,3 +21,9 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal docs
+INTERNAL_README.md
+
+# Data
+data/

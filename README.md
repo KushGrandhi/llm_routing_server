@@ -1,126 +1,271 @@
-# LLM Gateway Server
+# LLM Gateway
 
-A unified REST API gateway that routes requests to multiple LLM providers (OpenAI, Claude, Gemini, Groq, HuggingFace, and custom self-hosted models).
+A unified API for accessing multiple LLM providers (OpenAI, Claude, Gemini, Groq, and more) through a single, OpenAI-compatible interface.
 
-## Features
+## 🚀 Two Ways to Use
 
-- **Multi-Provider Support**: OpenAI, Anthropic Claude, Google Gemini, Groq, HuggingFace, and custom OpenAI-compatible endpoints
-- **Hot-Reload Config**: Add/remove models without restarting the server
-- **Streaming Support**: Real-time token streaming via SSE
-- **OpenAI-Compatible API**: Drop-in replacement for OpenAI API calls
-- **API Key Auth**: Simple Bearer token authentication
+### Option 1: Use Our Hosted API
 
-## Quick Start
+Get instant access without any setup:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.llmgateway.io/v1",  # Our hosted endpoint
+    api_key="your-api-key"                     # Get yours at llmgateway.io
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o",  # or "claude-sonnet", "gemini-flash", etc.
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+**Benefits:**
+- ✅ No infrastructure to manage
+- ✅ Access to all major LLM providers
+- ✅ Pay-as-you-go pricing
+- ✅ Built-in caching saves you money
+- ✅ Automatic fallbacks for reliability
+
+[**Get Your API Key →**](https://llmgateway.io)
+
+---
+
+### Option 2: Self-Host
+
+Run your own gateway for full control:
 
 ```bash
-# Install dependencies
+# Clone the repository
+git clone https://github.com/yourusername/llm-gateway.git
+cd llm-gateway
+
+# Configure your provider API keys
+cp env.example .env
+# Edit .env with your OpenAI, Anthropic, etc. keys
+
+# Run with Docker
+docker-compose up -d
+
+# Or run locally
 pip install -r requirements.txt
-
-# Copy and configure environment
-cp .env.example .env
-# Edit .env with your API keys
-
-# Run the server
 python run.py
 ```
 
-## Configuration
+Your gateway is now running at `http://localhost:5000`
 
-### Environment Variables (.env)
+---
 
-```bash
-# Gateway API key (for your apps to authenticate)
-GATEWAY_API_KEYS=your-secret-key
+## 📖 Quick Start
 
-# Provider API keys (add the ones you need)
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GEMINI_API_KEY=...
-GROQ_API_KEY=gsk_...
-HUGGINGFACE_API_KEY=hf_...
+### Basic Usage
+
+```python
+from openai import OpenAI
+
+# Point to your gateway (hosted or self-hosted)
+client = OpenAI(
+    base_url="http://localhost:5000/v1",
+    api_key="your-gateway-key"
+)
+
+# Use any supported model
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ],
+    temperature=0.7
+)
+
+print(response.choices[0].message.content)
 ```
 
-### Model Registry (config/models.yaml)
+### Streaming
 
-Edit this file to add/remove models. Use `POST /v1/models/reload` to apply changes without restart.
+```python
+stream = client.chat.completions.create(
+    model="claude-sonnet",
+    messages=[{"role": "user", "content": "Write a haiku about coding"}],
+    stream=True
+)
 
-```yaml
-models:
-  - name: "my-model"        # Name your apps will use
-    provider: "openai"      # Provider type
-    model_id: "gpt-4o"      # Actual model identifier
-
-  # Custom self-hosted (OpenAI-compatible)
-  - name: "local-llama"
-    provider: "custom_openai"
-    model_id: "llama-2"
-    api_base: "http://localhost:8080/v1"
-
-default_model: "gemini-flash"
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
 ```
 
-## API Endpoints
+### JavaScript/TypeScript
 
-### Chat Completions
+```typescript
+import OpenAI from 'openai';
 
-```bash
-POST /v1/chat/completions
+const client = new OpenAI({
+  baseURL: 'http://localhost:5000/v1',
+  apiKey: 'your-gateway-key'
+});
+
+const response = await client.chat.completions.create({
+  model: 'gemini-flash',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+console.log(response.choices[0].message.content);
 ```
+
+### cURL
 
 ```bash
 curl http://localhost:5000/v1/chat/completions \
   -H "Authorization: Bearer your-gateway-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-flash",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": false
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
+---
+
+## 🤖 Available Models
+
+| Model | Provider | Best For |
+|-------|----------|----------|
+| `gpt-4o` | OpenAI | General purpose, high quality |
+| `gpt-4o-mini` | OpenAI | Fast, cost-effective |
+| `claude-sonnet` | Anthropic | Long context, coding |
+| `claude-haiku` | Anthropic | Fast, lightweight |
+| `gemini-flash` | Google | Very fast, free tier |
+| `gemini-pro` | Google | High quality, long context |
+| `llama-groq` | Groq | Ultra-fast inference |
+| `reliable-gpt` | Multi | GPT-4o with auto-fallbacks |
+| `reliable-fast` | Multi | Fast model with fallbacks |
+
+---
+
+## ✨ Features
+
+### Unified API
+One interface for all providers. Switch models by changing a single string.
+
+### Automatic Fallbacks
+Configure backup models. If GPT-4o fails, automatically try Claude, then Gemini.
+
+### Response Caching
+Identical prompts return cached responses instantly—saves time and money.
+
+### Cost Tracking
+Every response includes cost estimation:
+```json
+{
+  "usage": {
+    "prompt_tokens": 50,
+    "completion_tokens": 100,
+    "cost_usd": 0.00045
+  }
+}
+```
+
+### Rate Limiting
+Built-in protection against runaway costs and abuse.
+
+### OpenAI Compatible
+Works with any OpenAI SDK—Python, JavaScript, Go, Rust, or raw HTTP.
+
+---
+
+## 📚 API Reference
+
+### Chat Completions
+
+```
+POST /v1/chat/completions
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model` | string | Yes | Model name (e.g., "gpt-4o") |
+| `messages` | array | Yes | Conversation messages |
+| `temperature` | float | No | Randomness (0-2, default: 0.7) |
+| `max_tokens` | int | No | Max response length |
+| `stream` | bool | No | Enable streaming (default: false) |
+
 ### List Models
 
-```bash
+```
 GET /v1/models
 ```
 
-### Reload Config
-
-```bash
-POST /v1/models/reload
-```
+Returns all available models with their configurations.
 
 ### Health Check
 
-```bash
+```
 GET /health
 ```
 
-## Supported Providers
+Returns gateway status.
 
-| Provider | Config Key | Free Tier |
-|----------|------------|-----------|
-| OpenAI | `openai` | No |
-| Anthropic | `anthropic` | No |
-| Google Gemini | `gemini` | Yes (15 req/min) |
-| Groq | `groq` | Yes (limited) |
-| HuggingFace | `huggingface` | Yes (rate limited) |
-| Custom/Self-hosted | `custom_openai` | Your infra |
+---
 
-## Production Deployment
+## 🔧 Self-Hosting Configuration
+
+### Environment Variables
+
+Create a `.env` file:
 
 ```bash
-gunicorn run:flask_application -w 4 -b 0.0.0.0:5000
+# Your provider API keys
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
+GROQ_API_KEY=gsk_...
+
+# Gateway authentication (for your apps/customers)
+GATEWAY_API_KEYS=key1,key2,key3
+
+# Optional features
+CACHE_ENABLED=true
+RATE_LIMIT_ENABLED=true
 ```
 
-## Adding Self-Hosted Models
+### Model Configuration
 
-For models hosted via vLLM, Ollama, or text-generation-inference:
+Edit `config/models.yaml` to customize available models:
 
 ```yaml
-- name: "my-local-model"
-  provider: "custom_openai"
-  model_id: "model-name"
-  api_base: "http://your-server:8000/v1"
+models:
+  - name: "my-gpt"
+    provider: "openai"
+    model_id: "gpt-4o"
+    fallbacks: ["claude-sonnet", "gemini-pro"]
+    timeout_seconds: 60
+    cache_enabled: true
+
+default_model: "my-gpt"
 ```
+
+Hot-reload without restart:
+```bash
+curl -X POST http://localhost:5000/v1/models/reload
+```
+
+---
+
+## 🆘 Support
+
+- **Documentation:** [docs.llmgateway.io](https://docs.llmgateway.io)
+- **Issues:** [GitHub Issues](https://github.com/yourusername/llm-gateway/issues)
+- **Email:** support@llmgateway.io
+
+---
+
+## 📄 License
+
+MIT License - use it however you want.
 
