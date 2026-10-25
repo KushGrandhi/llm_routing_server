@@ -183,7 +183,7 @@ class LLMRouterService:
         self,
         messages: list[dict],
         model: Optional[str] = None,
-        temperature: float = 0.7,
+        temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stream: bool = False,
         **additional_params
@@ -194,7 +194,8 @@ class LLMRouterService:
         Args:
             messages: List of message dicts with 'role' and 'content'
             model: Model name from config (uses default if not specified)
-            temperature: Sampling temperature
+            temperature: Sampling temperature (omitted when None, so the
+                provider's default applies)
             max_tokens: Maximum tokens to generate
             stream: Whether to stream the response
             **additional_params: Additional parameters passed to LiteLLM
@@ -223,7 +224,6 @@ class LLMRouterService:
         completion_kwargs = {
             "model": litellm_model_id,
             "messages": messages,
-            "temperature": temperature,
             "stream": stream,
             "timeout": timeout_seconds,
             "num_retries": max_retries_count,
@@ -241,9 +241,14 @@ class LLMRouterService:
             )
             completion_kwargs["cache"] = {"ttl": cache_ttl}
         
+        # Only send temperature when the client asked for one. Some newer
+        # models (e.g. recent Claude models) reject the parameter entirely.
+        if temperature is not None:
+            completion_kwargs["temperature"] = temperature
+
         if max_tokens:
             completion_kwargs["max_tokens"] = max_tokens
-        
+
         # Handle custom OpenAI-compatible endpoints
         if model_config.get("provider") == "custom_openai":
             api_base_url = model_config.get("api_base")
@@ -253,7 +258,16 @@ class LLMRouterService:
         
         # Add any extra params
         completion_kwargs.update(additional_params)
-        
+
+        # Strip params this model rejects (config: unsupported_params), so
+        # clients that always send e.g. temperature/top_p still work.
+        for unsupported_param in model_config.get("unsupported_params", []):
+            if completion_kwargs.pop(unsupported_param, None) is not None:
+                logger.debug(
+                    f"Dropped unsupported param '{unsupported_param}' "
+                    f"for model '{model or self.default_model_name}'"
+                )
+
         # Call LiteLLM
         response = litellm.completion(**completion_kwargs)
         

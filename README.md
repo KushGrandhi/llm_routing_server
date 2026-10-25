@@ -247,6 +247,12 @@ models:
     timeout_seconds: 60
     cache_enabled: true
 
+  - name: "claude-haiku"
+    provider: "anthropic"
+    model_id: "anthropic/claude-haiku-5-5"
+    # Params this model rejects; stripped even if a client sends them
+    unsupported_params: ["temperature"]
+
 default_model: "my-gpt"
 ```
 
