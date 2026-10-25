@@ -65,7 +65,7 @@ def create_chat_completion():
     Request Body:
         model: str - Model name from config (optional, uses default)
         messages: list - List of message objects with 'role' and 'content'
-        temperature: float - Sampling temperature (default: 0.7)
+        temperature: float - Sampling temperature (optional; provider default if omitted)
         max_tokens: int - Maximum tokens to generate (optional)
         stream: bool - Whether to stream the response (default: false)
         
@@ -106,7 +106,7 @@ def create_chat_completion():
         
         # Core parameters
         model_name = request_payload.get("model")
-        temperature_value = request_payload.get("temperature", 0.7)
+        temperature_value = request_payload.get("temperature")
         max_tokens_value = request_payload.get("max_tokens")
         stream_enabled = request_payload.get("stream", False)
         
@@ -264,7 +264,7 @@ def _handle_streaming_response(
     usage_tracker_service,
     messages_list: list,
     model_name: str,
-    temperature_value: float,
+    temperature_value,
     max_tokens_value: int,
     request_start_time: float,
     additional_params=None

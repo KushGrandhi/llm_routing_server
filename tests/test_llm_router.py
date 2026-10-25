@@ -26,6 +26,13 @@ models:
     model_id: "gemini/gemini-2.0-flash"
     timeout_seconds: 30
 
+  - name: "no-temp-model"
+    provider: "anthropic"
+    model_id: "anthropic/claude-haiku-5-5"
+    unsupported_params:
+      - "temperature"
+      - "top_p"
+
 default_model: "test-model"
 global_fallbacks:
   - "fallback-model"
@@ -33,6 +40,19 @@ global_fallbacks:
     config_file = tmp_path / "models.yaml"
     config_file.write_text(config_content)
     return str(config_file)
+
+
+def _mock_completion_response():
+    """Build a minimal LiteLLM-style completion response."""
+    mock_response = MagicMock()
+    mock_response.id = "test-id"
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content="Hello!"), finish_reason="stop")
+    ]
+    mock_response.usage = MagicMock(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
+    return mock_response
 
 
 @pytest.fixture
@@ -54,7 +74,7 @@ class TestLLMRouterInitialization:
     
     def test_loads_models_from_config(self, llm_router):
         """Should load models from YAML config."""
-        assert len(llm_router.available_models) == 2
+        assert len(llm_router.available_models) == 3
         assert "test-model" in llm_router.available_models
         assert "fallback-model" in llm_router.available_models
     
@@ -121,7 +141,7 @@ class TestAvailableModels:
         """Should return list of available models."""
         models_list = llm_router.get_available_models_list()
         
-        assert len(models_list) == 2
+        assert len(models_list) == 3
         
         test_model = next(m for m in models_list if m["id"] == "test-model")
         assert test_model["provider"] == "openai"
@@ -145,7 +165,7 @@ class TestConfigReload:
         result = llm_router.reload_configuration()
         
         assert result["status"] == "reloaded"
-        assert result["models_count"] == 2
+        assert result["models_count"] == 3
         assert result["default_model"] == "test-model"
 
 
@@ -182,7 +202,53 @@ class TestChatCompletion:
         assert call_kwargs["model"] == "gpt-4o"
         assert call_kwargs["messages"] == [{"role": "user", "content": "Hi"}]
         assert "fallbacks" in call_kwargs
-    
+
+    @patch("app.services.llm_router.litellm")
+    def test_omits_temperature_when_not_requested(self, mock_litellm, llm_router):
+        """Should not send a default temperature the client didn't ask for."""
+        mock_litellm.completion.return_value = _mock_completion_response()
+
+        with patch("app.services.llm_router.completion_cost", return_value=0.001):
+            llm_router.generate_chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+                model="test-model"
+            )
+
+        assert "temperature" not in mock_litellm.completion.call_args.kwargs
+
+    @patch("app.services.llm_router.litellm")
+    def test_passes_temperature_when_requested(self, mock_litellm, llm_router):
+        """Should forward an explicit temperature."""
+        mock_litellm.completion.return_value = _mock_completion_response()
+
+        with patch("app.services.llm_router.completion_cost", return_value=0.001):
+            llm_router.generate_chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+                model="test-model",
+                temperature=0.2
+            )
+
+        assert mock_litellm.completion.call_args.kwargs["temperature"] == 0.2
+
+    @patch("app.services.llm_router.litellm")
+    def test_strips_unsupported_params(self, mock_litellm, llm_router):
+        """Should drop params listed in the model's unsupported_params."""
+        mock_litellm.completion.return_value = _mock_completion_response()
+
+        with patch("app.services.llm_router.completion_cost", return_value=0.001):
+            llm_router.generate_chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+                model="no-temp-model",
+                temperature=0.7,
+                top_p=0.9,
+                seed=42
+            )
+
+        call_kwargs = mock_litellm.completion.call_args.kwargs
+        assert "temperature" not in call_kwargs
+        assert "top_p" not in call_kwargs
+        assert call_kwargs["seed"] == 42
+
     @patch("app.services.llm_router.litellm")
     def test_returns_formatted_response(self, mock_litellm, llm_router):
         """Should return properly formatted response."""
