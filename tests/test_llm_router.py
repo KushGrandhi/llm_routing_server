@@ -280,3 +280,60 @@ class TestChatCompletion:
         assert result["usage"]["cost_usd"] == 0.001
         assert "gateway_metadata" in result
 
+
+def _mock_stream_chunk(content):
+    """Build a minimal LiteLLM-style streaming chunk."""
+    chunk = MagicMock()
+    chunk.id = "stream-id"
+    chunk.choices = [MagicMock(finish_reason=None)]
+    chunk.choices[0].delta = MagicMock(content=content, role=None, tool_calls=None)
+    return chunk
+
+
+class TestStreaming:
+    """Tests for streaming completions."""
+
+    @patch("app.services.llm_router.litellm")
+    def test_stream_does_not_pass_litellm_fallbacks(self, mock_litellm, llm_router):
+        """LiteLLM's fallbacks break sync streaming, so they must not be passed."""
+        mock_litellm.completion.return_value = iter([_mock_stream_chunk("Hi")])
+
+        list(llm_router.generate_chat_completion(
+            messages=[{"role": "user", "content": "Hi"}],
+            model="test-model",
+            stream=True
+        ))
+
+        assert "fallbacks" not in mock_litellm.completion.call_args.kwargs
+
+    @patch("app.services.llm_router.litellm")
+    def test_stream_falls_back_when_primary_fails(self, mock_litellm, llm_router):
+        """Should try the next fallback if the primary fails before any chunk."""
+        mock_litellm.completion.side_effect = [
+            ConnectionError("primary down"),
+            iter([_mock_stream_chunk("Hello"), _mock_stream_chunk(" there")]),
+        ]
+
+        chunks = list(llm_router.generate_chat_completion(
+            messages=[{"role": "user", "content": "Hi"}],
+            model="test-model",
+            stream=True
+        ))
+
+        text = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        assert text == "Hello there"
+        models_tried = [call.kwargs["model"] for call in mock_litellm.completion.call_args_list]
+        assert models_tried == ["gpt-4o", "gemini/gemini-2.0-flash"]
+
+    @patch("app.services.llm_router.litellm")
+    def test_stream_raises_when_all_candidates_fail(self, mock_litellm, llm_router):
+        """Should surface the last error when every candidate fails."""
+        mock_litellm.completion.side_effect = ConnectionError("everything down")
+
+        with pytest.raises(ConnectionError):
+            list(llm_router.generate_chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+                model="test-model",
+                stream=True
+            ))
+
