@@ -5,6 +5,7 @@ gunicorn==21.2.0
 
 # LLM Integration
 litellm>=1.40.0,<1.70.0  # Pin for Python 3.9 compatibility
+tenacity>=8.2
 
 # Configuration
 python-dotenv==1.0.0
