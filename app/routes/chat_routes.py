@@ -83,8 +83,8 @@ def create_chat_completion():
     model_name = None
     
     try:
-        request_payload = request.get_json()
-        
+        request_payload = request.get_json(silent=True)
+
         if not request_payload:
             return jsonify({
                 "error": {
