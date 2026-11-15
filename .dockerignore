@@ -1,0 +1,17 @@
+# Secrets and local state must never enter the image
+.env
+.env.*
+deploy/.env
+**/.env
+.git
+.gitignore
+.venv
+venv
+.superpowers
+data
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.idea
+.vscode
+.DS_Store

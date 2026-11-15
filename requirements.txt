@@ -4,7 +4,7 @@ flask-cors==4.0.0
 gunicorn==21.2.0
 
 # LLM Integration
-litellm>=1.40.0,<1.70.0  # Pin for Python 3.9 compatibility
+litellm>=1.40.0,<1.70.0  # Upper bound verified on Python 3.11 (the Docker image)
 tenacity>=8.2
 
 # Configuration

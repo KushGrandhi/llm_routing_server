@@ -4,6 +4,7 @@ import logging
 
 from flask import Flask
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config.settings import get_gateway_settings
 from app.routes.chat_routes import chat_blueprint
@@ -32,6 +33,10 @@ def create_flask_application() -> Flask:
     
     flask_application = Flask(__name__)
     gateway_settings = get_gateway_settings()
+
+    # Caddy is the only proxy in front of the gateway; trust its X-Forwarded-For
+    # so rate limits see the real client address, not Caddy's container IP
+    flask_application.wsgi_app = ProxyFix(flask_application.wsgi_app, x_for=1)
     
     # Store settings in app config
     flask_application.config["CACHE_TYPE"] = gateway_settings.cache_type

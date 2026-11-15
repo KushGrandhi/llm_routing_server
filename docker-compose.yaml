@@ -1,8 +1,6 @@
 # LLM Gateway - Docker Compose Configuration
 # Run: docker-compose up -d
 
-version: '3.8'
-
 services:
   gateway:
     build:

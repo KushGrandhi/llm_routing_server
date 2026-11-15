@@ -1,5 +1,6 @@
 """Chat completion routes for LLM Gateway."""
 
+import hashlib
 import json
 import time
 
@@ -39,7 +40,8 @@ def _get_api_key_hash() -> str:
     """Get hash of API key for logging."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        return str(hash(auth_header[7:]))
+        # sha256, not hash(): hash() is randomized per process
+        return hashlib.sha256(auth_header[7:].encode("utf-8")).hexdigest()[:32]
     return "anonymous"
 
 
@@ -83,12 +85,12 @@ def create_chat_completion():
     model_name = None
     
     try:
-        request_payload = request.get_json()
-        
-        if not request_payload:
+        request_payload = request.get_json(silent=True)
+
+        if not isinstance(request_payload, dict) or not request_payload:
             return jsonify({
                 "error": {
-                    "message": "Request body is required",
+                    "message": "Request body must be a JSON object",
                     "type": "invalid_request_error",
                     "code": "missing_body"
                 }
@@ -116,7 +118,33 @@ def create_chat_completion():
         # Get services from app context
         llm_router_service = current_app.llm_router
         usage_tracker_service = current_app.usage_tracker
-        
+
+        # Validate the model before any response starts, so streaming
+        # requests get a 400 instead of a 200 that breaks mid-stream
+        model_error_message = None
+        if model_name is not None and not isinstance(model_name, str):
+            model_error_message = "model must be a string"
+        else:
+            try:
+                llm_router_service._resolve_model_identifier(model_name)
+            except ValueError as unknown_model_error:
+                model_error_message = str(unknown_model_error)
+        if model_error_message is not None:
+            _log_error_request(
+                usage_tracker_service,
+                str(model_name),
+                400,
+                model_error_message,
+                request_start_time
+            )
+            return jsonify({
+                "error": {
+                    "message": model_error_message,
+                    "type": "invalid_request_error",
+                    "code": "invalid_model"
+                }
+            }), 400
+
         # Track active requests
         effective_model = model_name or llm_router_service.default_model_name
         metrics_service.increment_active_requests(effective_model)

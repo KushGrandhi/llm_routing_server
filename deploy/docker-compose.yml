@@ -1,0 +1,62 @@
+# Fixed project name, so this stack never shares containers or volumes with
+# another compose project on the same host (for example, a stack in a folder also called deploy)
+name: llm-gateway
+
+services:
+  gateway:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+    volumes:
+      - gateway-data:/app/data
+      - ../config:/app/config:ro
+    expose:
+      - "5000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    # Caddy only needs the domain; it never receives gateway or provider secrets
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    mem_limit: 128m
+
+volumes:
+  gateway-data:
+  caddy-data:
+  caddy-config:
