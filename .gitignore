@@ -27,3 +27,7 @@ INTERNAL_README.md
 
 # Data
 data/
+
+# SDD workspaces (per-plan scratch)
+.superpowers/
+deploy/.env

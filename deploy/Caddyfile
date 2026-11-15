@@ -1,0 +1,3 @@
+llm.{$DOMAIN} {
+	reverse_proxy gateway:5000
+}
