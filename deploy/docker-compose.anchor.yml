@@ -1,0 +1,20 @@
+# Overlay for the Lightsail host "anchor". Use with the base file:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.anchor.yml up -d gateway redis
+#
+# anchor already runs an "aws-anchor" compose project (Open WebUI, aurora, its Caddy).
+# This joins the gateway to that project's network under the alias "gateway", so
+# OPENAI_API_BASE_URL=http://gateway:5000/v1 and the Caddy upstream keep working unchanged.
+# Caddy is not started from this stack on anchor: the aws-anchor Caddy serves llm.<domain>.
+
+services:
+  gateway:
+    networks:
+      default: {}
+      aws-anchor:
+        aliases:
+          - gateway
+
+networks:
+  aws-anchor:
+    external: true
+    name: aws-anchor_default

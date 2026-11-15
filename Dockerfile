@@ -36,13 +36,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Number of gunicorn workers; each one loads litellm, so keep it small on small hosts
 ENV GUNICORN_WORKERS=2
+# Worker timeout in seconds; long model responses need more than the default
+ENV GUNICORN_TIMEOUT=120
 
 # Run with gunicorn
 CMD exec gunicorn run:flask_application \
     --bind 0.0.0.0:5000 \
     --workers ${GUNICORN_WORKERS} \
     --threads 2 \
-    --timeout 120 \
+    --timeout ${GUNICORN_TIMEOUT} \
     --access-logfile - \
     --error-logfile -
 
