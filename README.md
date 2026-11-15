@@ -58,6 +58,21 @@ python run.py
 
 Your gateway is now running at `http://localhost:5000`
 
+#### Deploy on a server with TLS
+
+`deploy/` runs the gateway, Redis, and Caddy (automatic HTTPS) on one host:
+
+```bash
+cp deploy/.env.example deploy/.env   # set DOMAIN, GATEWAY_API_KEYS, provider keys
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Caddy serves `llm.<DOMAIN>`, so point an A record for `llm.<DOMAIN>` at the server first; ports 80 and 443 must be open. Check it with:
+
+```bash
+GATEWAY_KEY=<key> SMOKE_MODEL=<model> scripts/smoke.sh https://llm.<DOMAIN>
+```
+
 ---
 
 ## 📖 Quick Start
