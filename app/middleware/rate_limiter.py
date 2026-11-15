@@ -1,5 +1,6 @@
 """Rate limiting middleware for LLM Gateway."""
 
+import hashlib
 import logging
 from typing import Optional
 
@@ -17,14 +18,15 @@ def _get_rate_limit_key() -> str:
     """
     Get the key for rate limiting.
     
-    Uses API key if present, otherwise falls back to IP address.
-    This allows per-client rate limiting.
+    Uses a sha256 digest of a non-empty Bearer token (stable across
+    processes, unlike hash()), otherwise falls back to the client IP.
     """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        # Use hash of API key for privacy
         api_key_value = auth_header[7:]
-        return f"apikey:{hash(api_key_value)}"
+        if api_key_value:
+            digest = hashlib.sha256(api_key_value.encode("utf-8")).hexdigest()[:32]
+            return f"apikey:{digest}"
     return f"ip:{get_remote_address()}"
 
 
