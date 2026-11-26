@@ -15,6 +15,11 @@ from app.config.settings import get_gateway_settings
 
 logger = logging.getLogger(__name__)
 
+# Model kinds a config entry can declare with `mode:` (LiteLLM's own terms).
+CHAT_MODE = "chat"
+EMBEDDING_MODE = "embedding"
+MODEL_MODES = {CHAT_MODE, EMBEDDING_MODE}
+
 
 class LLMRouterService:
     """Service for routing requests to different LLM providers via LiteLLM."""
@@ -75,6 +80,11 @@ class LLMRouterService:
         for model_config in config_data.get("models", []):
             model_name = model_config.get("name")
             if model_name:
+                if model_config.get("mode", CHAT_MODE) not in MODEL_MODES:
+                    logger.warning(
+                        f"Model '{model_name}' has unknown mode "
+                        f"'{model_config.get('mode')}'; expected one of {sorted(MODEL_MODES)}"
+                    )
                 self.available_models[model_name] = model_config
         
         self.default_model_name = config_data.get("default_model")
@@ -100,6 +110,7 @@ class LLMRouterService:
         for model_name, model_config in self.available_models.items():
             models_list.append({
                 "id": model_name,
+                "mode": model_config.get("mode", CHAT_MODE),
                 "provider": model_config.get("provider"),
                 "model_id": model_config.get("model_id"),
                 "is_default": model_name == self.default_model_name,
@@ -113,10 +124,17 @@ class LLMRouterService:
             })
         return models_list
     
-    def _resolve_model_identifier(self, requested_model: str) -> tuple[str, dict]:
+    def _resolve_model_identifier(
+        self,
+        requested_model: str,
+        mode: str = CHAT_MODE
+    ) -> tuple[str, dict]:
         """
         Resolve the requested model name to LiteLLM model identifier.
-        
+
+        Raises ValueError if the model is unknown or is not a `mode` model
+        (e.g. an embedding model requested for chat).
+
         Returns:
             Tuple of (litellm_model_id, model_config)
         """
@@ -131,6 +149,12 @@ class LLMRouterService:
             )
         
         model_config = self.available_models[requested_model]
+        model_mode = model_config.get("mode", CHAT_MODE)
+        if model_mode != mode:
+            raise ValueError(
+                f"Model '{requested_model}' is a '{model_mode}' model "
+                f"and cannot be used for '{mode}' requests"
+            )
         provider_name = model_config.get("provider")
         model_identifier = model_config.get("model_id")
         
@@ -160,6 +184,7 @@ class LLMRouterService:
         for candidate_name in candidate_names:
             if (
                 candidate_name in self.available_models
+                and self.available_models[candidate_name].get("mode", CHAT_MODE) == CHAT_MODE
                 and candidate_name != primary_model_name
                 and candidate_name not in fallback_names
             ):
@@ -179,6 +204,50 @@ class LLMRouterService:
                 fallback_model_ids.append(fallback_id)
         return fallback_model_ids
 
+    def _base_call_kwargs(self, litellm_model_id: str, model_config: dict) -> dict:
+        """LiteLLM kwargs shared by chat and embeddings: timeout, cache, endpoint."""
+        call_kwargs = {
+            "model": litellm_model_id,
+            "timeout": model_config.get(
+                "timeout_seconds",
+                self.gateway_settings.default_timeout_seconds
+            ),
+        }
+
+        if model_config.get("cache_enabled", True) and self.gateway_settings.cache_enabled:
+            cache_ttl = model_config.get(
+                "cache_ttl_seconds",
+                self.gateway_settings.cache_default_ttl_seconds
+            )
+            call_kwargs["cache"] = {"ttl": cache_ttl}
+
+        # Handle custom OpenAI-compatible endpoints
+        if model_config.get("provider") == "custom_openai":
+            api_base_url = model_config.get("api_base")
+            if api_base_url:
+                call_kwargs["api_base"] = api_base_url
+                call_kwargs["api_key"] = model_config.get("api_key", "not-needed")
+
+        return call_kwargs
+
+    def _drop_unsupported_params(
+        self,
+        model_name: str,
+        model_config: dict,
+        call_kwargs: dict
+    ) -> dict:
+        """
+        Strip params this model rejects (config: unsupported_params), so
+        clients that always send e.g. temperature/top_p still work.
+        """
+        for unsupported_param in model_config.get("unsupported_params", []):
+            if call_kwargs.pop(unsupported_param, None) is not None:
+                logger.debug(
+                    f"Dropped unsupported param '{unsupported_param}' "
+                    f"for model '{model_name}'"
+                )
+        return call_kwargs
+
     def _build_completion_kwargs(
         self,
         model_name: str,
@@ -191,30 +260,15 @@ class LLMRouterService:
         additional_params: dict
     ) -> dict:
         """Build the LiteLLM kwargs for one model (without fallbacks)."""
-        timeout_seconds = model_config.get(
-            "timeout_seconds",
-            self.gateway_settings.default_timeout_seconds
-        )
-        max_retries_count = model_config.get(
-            "max_retries",
-            self.gateway_settings.default_max_retries
-        )
-
-        completion_kwargs = {
-            "model": litellm_model_id,
+        completion_kwargs = self._base_call_kwargs(litellm_model_id, model_config)
+        completion_kwargs.update({
             "messages": messages,
             "stream": stream,
-            "timeout": timeout_seconds,
-            "num_retries": max_retries_count,
-        }
-
-        # Add caching control
-        if model_config.get("cache_enabled", True) and self.gateway_settings.cache_enabled:
-            cache_ttl = model_config.get(
-                "cache_ttl_seconds",
-                self.gateway_settings.cache_default_ttl_seconds
-            )
-            completion_kwargs["cache"] = {"ttl": cache_ttl}
+            "num_retries": model_config.get(
+                "max_retries",
+                self.gateway_settings.default_max_retries
+            ),
+        })
 
         # Only send temperature when the client asked for one. Some newer
         # models (e.g. recent Claude models) reject the parameter entirely.
@@ -224,26 +278,10 @@ class LLMRouterService:
         if max_tokens:
             completion_kwargs["max_tokens"] = max_tokens
 
-        # Handle custom OpenAI-compatible endpoints
-        if model_config.get("provider") == "custom_openai":
-            api_base_url = model_config.get("api_base")
-            if api_base_url:
-                completion_kwargs["api_base"] = api_base_url
-                completion_kwargs["api_key"] = model_config.get("api_key", "not-needed")
-
         # Add any extra params
         completion_kwargs.update(additional_params)
 
-        # Strip params this model rejects (config: unsupported_params), so
-        # clients that always send e.g. temperature/top_p still work.
-        for unsupported_param in model_config.get("unsupported_params", []):
-            if completion_kwargs.pop(unsupported_param, None) is not None:
-                logger.debug(
-                    f"Dropped unsupported param '{unsupported_param}' "
-                    f"for model '{model_name}'"
-                )
-
-        return completion_kwargs
+        return self._drop_unsupported_params(model_name, model_config, completion_kwargs)
 
     def _open_stream_with_fallbacks(self, candidates: list[tuple[str, dict]]):
         """
@@ -480,5 +518,99 @@ class LLMRouterService:
                 "latency_ms": latency_milliseconds,
                 "provider_model": litellm_model_id,
                 "cached": getattr(response, "_hidden_params", {}).get("cache_hit", False)
+            }
+        }
+
+    def generate_embeddings(
+        self,
+        input_data: Union[str, list],
+        model: str,
+        **additional_params
+    ) -> dict:
+        """
+        Create embeddings with a configured `mode: embedding` model.
+
+        Provider selection is the same as chat (model_id / api_base from
+        config). There are no fallbacks: vectors from another model live in a
+        different space, so answering from a fallback would corrupt indexes.
+
+        Args:
+            input_data: A string, list of strings, or token id list(s)
+            model: Embedding model name from config
+            **additional_params: e.g. dimensions, user
+
+        Returns:
+            OpenAI-style embedding list response (float vectors)
+        """
+        request_start_time = time.time()
+        litellm_model_id, model_config = self._resolve_model_identifier(
+            model, mode=EMBEDDING_MODE
+        )
+
+        embedding_kwargs = self._base_call_kwargs(litellm_model_id, model_config)
+        embedding_kwargs["input"] = input_data
+        # LiteLLM only runs its num_retries loop for completion(); for
+        # embedding() it forwards max_retries to the provider client.
+        embedding_kwargs["max_retries"] = model_config.get(
+            "max_retries",
+            self.gateway_settings.default_max_retries
+        )
+        embedding_kwargs.update(additional_params)
+        embedding_kwargs = self._drop_unsupported_params(
+            model, model_config, embedding_kwargs
+        )
+
+        response = litellm.embedding(**embedding_kwargs)
+
+        return self._format_embedding_response(
+            response,
+            model,
+            litellm_model_id,
+            int((time.time() - request_start_time) * 1000)
+        )
+
+    def _format_embedding_response(
+        self,
+        response,
+        model_name: str,
+        litellm_model_id: str,
+        latency_milliseconds: int
+    ) -> dict:
+        """Format a LiteLLM EmbeddingResponse as an OpenAI embedding list."""
+        embedding_items = []
+        for position, item in enumerate(response.data or []):
+            if isinstance(item, dict):
+                vector = item.get("embedding")
+                item_index = item.get("index", position)
+            else:
+                vector = getattr(item, "embedding", None)
+                item_index = getattr(item, "index", position)
+            embedding_items.append({
+                "object": "embedding",
+                "index": item_index if item_index is not None else position,
+                "embedding": list(vector or []),
+            })
+
+        usage = getattr(response, "usage", None)
+        prompt_tokens = (getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+        usage_data = {
+            "prompt_tokens": prompt_tokens,
+            "total_tokens": (getattr(usage, "total_tokens", 0) or prompt_tokens) if usage else 0,
+        }
+        cost_usd = self._calculate_request_cost(response, litellm_model_id)
+        if cost_usd is not None:
+            usage_data["cost_usd"] = cost_usd
+
+        return {
+            "object": "list",
+            "data": embedding_items,
+            "model": model_name,
+            "usage": usage_data,
+            "gateway_metadata": {
+                "latency_ms": latency_milliseconds,
+                "provider_model": litellm_model_id,
+                "cached": (getattr(response, "_hidden_params", None) or {}).get(
+                    "cache_hit", False
+                ) or False,
             }
         }

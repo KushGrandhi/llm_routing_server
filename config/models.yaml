@@ -115,6 +115,52 @@ models:
     max_retries: 0
     cache_enabled: false
 
+  # =============================================================================
+  # EMBEDDING MODELS (served on POST /v1/embeddings)
+  # =============================================================================
+  # Declared like chat models plus `mode: embedding`. Any LiteLLM embedding
+  # provider works through model_id (e.g. "gemini/...", "voyage/...",
+  # "cohere/...", "mistral/...", "ollama/..."), and any OpenAI-compatible
+  # server through provider "custom_openai" + api_base.
+  # Embedding models never fall back: vectors from another model are not
+  # comparable, so `fallbacks` and global_fallbacks do not apply to them.
+
+  - name: "text-embedding-3-small"
+    mode: "embedding"
+    provider: "openai"
+    model_id: "text-embedding-3-small"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
+
+  - name: "gemini-embedding"
+    mode: "embedding"
+    provider: "gemini"
+    model_id: "gemini/gemini-embedding-001"
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
+
+  # Open-weight, self-hosted: Ollama (`ollama pull qwen3-embedding:0.6b`),
+  # vLLM, TEI or llama.cpp; anything serving OpenAI's /v1/embeddings.
+  - name: "qwen3-embedding"
+    mode: "embedding"
+    provider: "custom_openai"
+    model_id: "qwen3-embedding:0.6b"
+    api_base: "http://localhost:11434/v1"
+    timeout_seconds: 60
+    max_retries: 0
+    cache_enabled: true
+
+  - name: "bge-m3"
+    mode: "embedding"
+    provider: "custom_openai"
+    model_id: "bge-m3"
+    api_base: "http://localhost:11434/v1"
+    timeout_seconds: 60
+    max_retries: 0
+    cache_enabled: true
+
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================

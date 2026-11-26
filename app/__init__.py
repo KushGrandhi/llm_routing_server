@@ -8,6 +8,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config.settings import get_gateway_settings
 from app.routes.chat_routes import chat_blueprint
+from app.routes.embeddings_routes import embeddings_blueprint
 from app.routes.models_routes import models_blueprint
 from app.routes.admin_routes import admin_blueprint
 from app.services.llm_router import LLMRouterService
@@ -57,6 +58,7 @@ def create_flask_application() -> Flask:
     
     # Register blueprints
     flask_application.register_blueprint(chat_blueprint, url_prefix="/v1")
+    flask_application.register_blueprint(embeddings_blueprint, url_prefix="/v1")
     flask_application.register_blueprint(models_blueprint, url_prefix="/v1")
     flask_application.register_blueprint(admin_blueprint, url_prefix="/v1")
     
@@ -73,6 +75,7 @@ def create_flask_application() -> Flask:
             "version": "1.0.0",
             "endpoints": {
                 "chat": "/v1/chat/completions",
+                "embeddings": "/v1/embeddings",
                 "models": "/v1/models",
                 "usage": "/v1/usage",
                 "metrics": "/v1/metrics",

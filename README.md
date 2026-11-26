@@ -145,6 +145,38 @@ curl http://localhost:5000/v1/chat/completions \
   }'
 ```
 
+### Embeddings
+
+`POST /v1/embeddings` takes the OpenAI request shape. Use any model declared with
+`mode: embedding` in `config/models.yaml` (`GET /v1/models` shows each model's `mode`):
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="https://llm.kgai.pro/v1", api_key="your-gateway-key")
+
+result = client.embeddings.create(
+    model="qwen3-embedding",          # open weights, self-hosted (or "text-embedding-3-small", "gemini-embedding")
+    input=["first document", "second document"],
+)
+vectors = [item.embedding for item in result.data]
+print(len(vectors), len(vectors[0]), result.usage.prompt_tokens)
+```
+
+`input` can be a string, a list of strings, or token id lists (at most 2048 items).
+Optional: `dimensions` (if the model supports it), `encoding_format` (`float` or
+`base64`, default `float`; the openai client handles this for you), `user`.
+
+```bash
+curl https://llm.kgai.pro/v1/embeddings \
+  -H "Authorization: Bearer your-gateway-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen3-embedding", "input": "Hello!"}'
+```
+
+Embedding requests share chat's auth, rate limits, usage log (`/v1/usage`) and metrics.
+They never fall back to another model, because vectors from different models can't be compared.
+
 ---
 
 ## 🤖 Available Models
@@ -160,6 +192,9 @@ curl http://localhost:5000/v1/chat/completions \
 | `llama-groq` | Groq | Ultra-fast inference |
 | `reliable-gpt` | Multi | GPT-4o with auto-fallbacks |
 | `reliable-fast` | Multi | Fast model with fallbacks |
+| `text-embedding-3-small` | OpenAI | Embeddings |
+| `gemini-embedding` | Google | Embeddings |
+| `qwen3-embedding`, `bge-m3` | Self-hosted (Ollama, vLLM, TEI, ...) | Open-weight embeddings |
 
 ---
 
@@ -209,6 +244,20 @@ POST /v1/chat/completions
 | `temperature` | float | No | Randomness (0-2, default: 0.7) |
 | `max_tokens` | int | No | Max response length |
 | `stream` | bool | No | Enable streaming (default: false) |
+
+### Embeddings
+
+```
+POST /v1/embeddings
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `model` | string | Yes | An embedding model name from config |
+| `input` | string / array | Yes | Text, list of texts, or token id list(s) |
+| `dimensions` | int | No | Output size, if the model supports it |
+| `encoding_format` | string | No | `float` (default) or `base64` |
+| `user` | string | No | End-user id passed to the provider |
 
 ### List Models
 
@@ -267,6 +316,18 @@ models:
     model_id: "anthropic/claude-haiku-5-5"
     # Params this model rejects; stripped even if a client sends them
     unsupported_params: ["temperature"]
+
+  # Embedding models: same keys plus `mode: embedding`
+  - name: "my-embedder"
+    mode: "embedding"
+    provider: "openai"
+    model_id: "text-embedding-3-small"   # or "gemini/gemini-embedding-001", "voyage/voyage-3", ...
+
+  - name: "open-embedder"                # any OpenAI-compatible server
+    mode: "embedding"
+    provider: "custom_openai"
+    model_id: "bge-m3"
+    api_base: "http://localhost:11434/v1"
 
 default_model: "my-gpt"
 ```
