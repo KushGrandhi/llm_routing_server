@@ -12,12 +12,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import litellm
 import pytest
 import yaml
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from werkzeug.serving import make_server
 
 from app import create_flask_application
+from app.services import litellm_patches
 from app.services.llm_router import LLMRouterService
 
 
@@ -89,6 +92,14 @@ def embeddings_config_path(tmp_path, fake_open_weight_server):
                 "model_id": "gemini/gemini-embedding-001",
                 "timeout_seconds": 12,
                 "max_retries": 3,
+                "cache_enabled": False,
+            },
+            {
+                "name": "passthrough-embed",
+                "mode": "embedding",
+                "provider": "gemini",
+                "model_id": "gemini/gemini-embedding-001",
+                "passthrough_params": ["task_type"],
                 "cache_enabled": False,
             },
             {
@@ -282,6 +293,118 @@ class TestEmbeddingsRouting:
         models = {m["id"]: m for m in client.get("/v1/models").get_json()["data"]}
         assert models["chat-model"]["mode"] == "chat"
         assert models["open-embed"]["mode"] == "embedding"
+
+
+class TestPassthroughParams:
+    """Only keys on the model's `passthrough_params` list reach LiteLLM."""
+
+    def _post(self, client, payload):
+        with patch("app.services.llm_router.litellm.embedding") as mock_embedding:
+            mock_embedding.return_value = _embedding_response([[0.1]])
+            response = client.post("/v1/embeddings", json=payload)
+        assert response.status_code == 200
+        return mock_embedding.call_args.kwargs
+
+    def test_allowlisted_key_is_forwarded(self, client):
+        call_kwargs = self._post(client, {
+            "model": "passthrough-embed", "input": "x", "task_type": "RETRIEVAL_QUERY"
+        })
+        assert call_kwargs["task_type"] == "RETRIEVAL_QUERY"
+
+    def test_non_allowlisted_keys_are_not_forwarded(self, client):
+        call_kwargs = self._post(client, {
+            "model": "passthrough-embed",
+            "input": "x",
+            "task_type": "RETRIEVAL_DOCUMENT",
+            "api_base": "http://attacker.example",
+            "api_key": "stolen",
+            "custom_llm_provider": "openai",
+        })
+        assert call_kwargs["task_type"] == "RETRIEVAL_DOCUMENT"
+        for key in ("api_base", "api_key", "custom_llm_provider"):
+            assert key not in call_kwargs
+
+    def test_model_without_list_forwards_nothing_extra(self, client):
+        call_kwargs = self._post(client, {
+            "model": "closed-embed", "input": "x", "task_type": "RETRIEVAL_QUERY"
+        })
+        assert set(call_kwargs) == {"model", "input", "timeout", "max_retries"}
+
+    def test_passthrough_params_are_part_of_the_cache_key(self, app):
+        cache = litellm.Cache(type="local")
+        base = {"model": "gemini/gemini-embedding-001", "input": ["x"]}
+        assert (
+            cache.get_cache_key(**base, task_type="RETRIEVAL_QUERY")
+            != cache.get_cache_key(**base, task_type="RETRIEVAL_DOCUMENT")
+        )
+
+    def test_shipped_gemini_model_allowlists_task_type(self):
+        config_path = Path(__file__).parent.parent / "config" / "models.yaml"
+        models = {m["name"]: m for m in yaml.safe_load(config_path.read_text())["models"]}
+        assert models["gemini-embedding"]["passthrough_params"] == ["task_type"]
+
+
+@pytest.fixture
+def fake_google_batch_embed(monkeypatch):
+    """Stand in for Google's batchEmbedContents HTTP call; LiteLLM's own
+    request/response transformation and token counting still run."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    sent = []
+
+    def fake_post(self, url, headers=None, data=None, **kwargs):
+        body = json.loads(data)
+        sent.append(body)
+        embeddings = [
+            {"values": [float(position), 0.5]}
+            for position in range(len(body["requests"]))
+        ]
+        return httpx.Response(
+            200, json={"embeddings": embeddings}, request=httpx.Request("POST", url)
+        )
+
+    with patch.object(HTTPHandler, "post", fake_post):
+        yield sent
+
+
+class TestGeminiBatchPath:
+    """Real LiteLLM Gemini batch path with only the HTTP call faked."""
+
+    def test_special_token_text_returns_vectors(self, client, fake_google_batch_embed):
+        response = client.post("/v1/embeddings", json={
+            "model": "closed-embed",
+            "input": ["before <|endoftext|> after", "<|endoftext|>"],
+        })
+        assert response.status_code == 200, response.get_json()
+        data = response.get_json()
+        assert [item["embedding"] for item in data["data"]] == [[0.0, 0.5], [1.0, 0.5]]
+        assert data["usage"]["prompt_tokens"] > 0
+        sent_texts = [
+            r["content"]["parts"][0]["text"] for r in fake_google_batch_embed[-1]["requests"]
+        ]
+        assert sent_texts == ["before <|endoftext|> after", "<|endoftext|>"]
+
+    def test_indexes_follow_input_positions(self, client, fake_google_batch_embed):
+        response = client.post("/v1/embeddings", json={
+            "model": "closed-embed", "input": ["a", "b", "c"]
+        })
+        assert response.status_code == 200, response.get_json()
+        data = response.get_json()["data"]
+        assert [item["index"] for item in data] == [0, 1, 2]
+        assert [item["embedding"][0] for item in data] == [0.0, 1.0, 2.0]
+
+    def test_task_type_reaches_google(self, client, fake_google_batch_embed):
+        response = client.post("/v1/embeddings", json={
+            "model": "passthrough-embed", "input": ["a"], "task_type": "RETRIEVAL_QUERY"
+        })
+        assert response.status_code == 200, response.get_json()
+        assert fake_google_batch_embed[-1]["requests"][0]["task_type"] == "RETRIEVAL_QUERY"
+
+    def test_patch_wraps_module_global_once(self, app):
+        module = __import__(litellm_patches._BATCH_EMBED_MODULE, fromlist=["token_counter"])
+        wrapped = module.token_counter
+        assert getattr(wrapped, "_gateway_special_token_safe", False)
+        litellm_patches.apply_litellm_patches()
+        assert module.token_counter is wrapped
 
 
 class TestOpenWeightRoute:

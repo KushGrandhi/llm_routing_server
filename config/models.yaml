@@ -137,6 +137,8 @@ models:
     mode: "embedding"
     provider: "gemini"
     model_id: "gemini/gemini-embedding-001"
+    # Request keys forwarded to the provider as-is (others are ignored)
+    passthrough_params: [task_type]
     timeout_seconds: 30
     max_retries: 2
     cache_enabled: true

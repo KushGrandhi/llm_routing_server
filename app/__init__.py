@@ -11,6 +11,7 @@ from app.routes.chat_routes import chat_blueprint
 from app.routes.embeddings_routes import embeddings_blueprint
 from app.routes.models_routes import models_blueprint
 from app.routes.admin_routes import admin_blueprint
+from app.services.litellm_patches import apply_litellm_patches
 from app.services.llm_router import LLMRouterService
 from app.services.usage_tracker import UsageTrackerService
 from app.middleware.rate_limiter import rate_limiter, init_rate_limiter
@@ -31,7 +32,8 @@ def create_flask_application() -> Flask:
     """Create and configure the Flask application."""
     setup_logging()
     logger = logging.getLogger(__name__)
-    
+    apply_litellm_patches()
+
     flask_application = Flask(__name__)
     gateway_settings = get_gateway_settings()
 

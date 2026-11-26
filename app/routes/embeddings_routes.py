@@ -17,6 +17,18 @@ embeddings_blueprint = Blueprint("embeddings", __name__)
 # OpenAI's documented per-request limit on input items
 MAX_INPUT_ITEMS = 2048
 ENCODING_FORMATS = {"float", "base64"}
+# Request fields this route handles itself; never taken from passthrough_params
+STANDARD_FIELDS = {"model", "input", "dimensions", "encoding_format", "user"}
+
+
+def _passthrough_params(request_payload: dict, model_config: dict) -> dict:
+    """
+    Provider-specific request keys the model's config allowlists via
+    `passthrough_params` (e.g. [task_type]). Any other unknown key is
+    dropped, so clients cannot set api_base, api_key or similar.
+    """
+    allowed = set(model_config.get("passthrough_params") or []) - STANDARD_FIELDS
+    return {key: request_payload[key] for key in allowed if key in request_payload}
 
 
 def _invalid_request(message: str, code: str = "invalid_request"):
@@ -71,6 +83,8 @@ def create_embeddings():
         encoding_format: str - "float" (default) or "base64" (optional)
         dimensions: int - Output size, if the model supports it (optional)
         user: str - End-user id passed to the provider (optional)
+        Any key listed in the model's `passthrough_params` config (optional);
+        other keys are ignored.
     """
     request_start_time = time.time()
     request_payload = request.get_json(silent=True)
@@ -108,12 +122,15 @@ def create_embeddings():
 
     llm_router_service = current_app.llm_router
     try:
-        llm_router_service._resolve_model_identifier(model_name, mode="embedding")
+        _, model_config = llm_router_service._resolve_model_identifier(
+            model_name, mode="embedding"
+        )
     except ValueError as model_error:
         _log_error_request(
             usage_tracker_service, model_name, 400, str(model_error), request_start_time
         )
         return _invalid_request(str(model_error), "invalid_model")
+    additional_params.update(_passthrough_params(request_payload, model_config))
 
     metrics_service.increment_active_requests(model_name)
     try:

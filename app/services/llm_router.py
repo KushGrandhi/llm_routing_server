@@ -40,6 +40,10 @@ class LLMRouterService:
         # Configure LiteLLM settings
         litellm.drop_params = True  # Drop unsupported params instead of erroring
         litellm.set_verbose = False  # Reduce noise in logs
+        # Include provider-specific params (e.g. passthrough_params such as
+        # task_type) in cache keys; otherwise requests that differ only in
+        # them would share one cached response.
+        litellm.enable_caching_on_provider_specific_optional_params = True
         
         self._load_model_configuration()
         self._setup_caching()
@@ -577,17 +581,18 @@ class LLMRouterService:
         latency_milliseconds: int
     ) -> dict:
         """Format a LiteLLM EmbeddingResponse as an OpenAI embedding list."""
+        # `index` is the item's position in the input list. Providers return
+        # vectors in input order, but some LiteLLM paths (e.g. Gemini batch
+        # embeddings) report index=0 for every item, so never trust theirs.
         embedding_items = []
         for position, item in enumerate(response.data or []):
             if isinstance(item, dict):
                 vector = item.get("embedding")
-                item_index = item.get("index", position)
             else:
                 vector = getattr(item, "embedding", None)
-                item_index = getattr(item, "index", position)
             embedding_items.append({
                 "object": "embedding",
-                "index": item_index if item_index is not None else position,
+                "index": position,
                 "embedding": list(vector or []),
             })
 
