@@ -21,7 +21,7 @@ models:
 
   - name: "reliable-fast"
     provider: "gemini"
-    model_id: "gemini/gemini-2.0-flash"
+    model_id: "gemini/gemini-3.8-flash"
     fallbacks:
       - "gpt-4o-mini"
       - "llama-groq"
@@ -73,15 +73,44 @@ models:
   
   - name: "gemini-flash"
     provider: "gemini"
-    model_id: "gemini/gemini-2.0-flash"
+    model_id: "gemini/gemini-3.8-flash"
     timeout_seconds: 30
     max_retries: 2
     cache_enabled: true
     
   - name: "gemini-pro"
     provider: "gemini"
-    model_id: "gemini/gemini-1.5-pro"
+    model_id: "gemini/gemini-3.1-pro-preview"
     timeout_seconds: 60
+    max_retries: 1
+    cache_enabled: true
+
+  # Gemini 4 (ids from aistudio.google.com/docs/latest-model and /docs/models, 2026-11-26)
+  - name: "gemini-4-hydrogen"   # general purpose, fast
+    provider: "gemini"
+    model_id: "gemini/gemini-4-hydrogen"
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-neon"       # flagship reasoning
+    provider: "gemini"
+    model_id: "gemini/gemini-4-neon"
+    timeout_seconds: 180
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-carbon"     # flagship reasoning
+    provider: "gemini"
+    model_id: "gemini/gemini-4-carbon"
+    timeout_seconds: 180
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-argon"
+    provider: "gemini"
+    model_id: "gemini/gemini-4-argon"
+    timeout_seconds: 180
     max_retries: 1
     cache_enabled: true
 
