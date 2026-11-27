@@ -8,6 +8,8 @@
 
 services:
   gateway:
+    volumes:
+      - ../config/anchor:/app/config:ro   # anchor's own registry (replaces the example config)
     networks:
       default: {}
       aws-anchor:

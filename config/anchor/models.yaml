@@ -1,0 +1,98 @@
+# Model registry for the anchor deployment (llm.kgai.pro). Mounted over config/ by
+# deploy/docker-compose.anchor.yml, so a redeploy can never swap in the example config again.
+# Keys on anchor: ANTHROPIC_API_KEY, GEMINI_API_KEY only; routes needing other keys are left out.
+#
+# Notes:
+# - Always give model_id a provider prefix (anthropic/, gemini/, ...). The pinned LiteLLM can't
+#   infer the provider for some bare Claude IDs.
+# - unsupported_params: current Claude models reject `temperature`; the gateway strips it.
+# - cache_enabled is OFF for chat models: with caching on, "regenerate" returns the same answer.
+
+models:
+  # ---------------------------------------------------------------------------- Claude
+  - name: "claude-haiku"
+    provider: "anthropic"
+    model_id: "anthropic/claude-haiku-5-5"
+    unsupported_params: ["temperature"]
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: false
+    description: "Fast and cheap: default for casual chat and Jarvis"
+
+  - name: "claude-sonnet"
+    provider: "anthropic"
+    model_id: "anthropic/claude-sonnet-5-5"
+    unsupported_params: ["temperature"]
+    timeout_seconds: 300
+    max_retries: 1
+    cache_enabled: false
+    description: "Everyday heavy lifting: coding, writing, analysis"
+
+  - name: "claude-opus"
+    provider: "anthropic"
+    model_id: "anthropic/claude-opus-5-5"
+    unsupported_params: ["temperature"]
+    timeout_seconds: 300
+    max_retries: 1
+    cache_enabled: false
+    description: "Hardest reasoning tasks"
+
+  # ---------------------------------------------------------------------------- Gemini
+  - name: "gemini-flash"
+    provider: "gemini"
+    model_id: "gemini/gemini-3.8-flash"
+    timeout_seconds: 60
+    max_retries: 1
+    cache_enabled: false
+
+  - name: "gemini-pro"
+    provider: "gemini"
+    model_id: "gemini/gemini-3.1-pro-preview"
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: false
+
+  # Gemini 4 (ids from aistudio.google.com/docs/models, 2026-11-26). Jarvis search rerank uses hydrogen.
+  - name: "gemini-4-hydrogen"
+    provider: "gemini"
+    model_id: "gemini/gemini-4-hydrogen"
+    timeout_seconds: 120
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-neon"
+    provider: "gemini"
+    model_id: "gemini/gemini-4-neon"
+    timeout_seconds: 180
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-carbon"
+    provider: "gemini"
+    model_id: "gemini/gemini-4-carbon"
+    timeout_seconds: 180
+    max_retries: 1
+    cache_enabled: true
+
+  - name: "gemini-4-argon"
+    provider: "gemini"
+    model_id: "gemini/gemini-4-argon"
+    timeout_seconds: 180
+    max_retries: 1
+    cache_enabled: true
+
+  # ---------------------------------------------------------------------------- embeddings
+  - name: "gemini-embedding"
+    mode: "embedding"
+    provider: "gemini"
+    model_id: "gemini/gemini-embedding-001"
+    passthrough_params: [task_type]
+    timeout_seconds: 30
+    max_retries: 2
+    cache_enabled: true
+
+default_model: "claude-haiku"
+
+# Used when a model's own fallbacks are exhausted
+global_fallbacks:
+  - "claude-haiku"
